@@ -90,6 +90,17 @@ impl<'a, K: Key, V: Value> IntoIterator for &'a SkipList<K, V> {
     }
 }
 
+impl<'a, K: Key, V: Value> SkipList<K, V> {
+    pub fn iter(&'a self) -> SkipListIter<'a, K, V> {
+        let first = unsafe { self.head.as_ref() }.forward[0].ptr;
+
+        SkipListIter {
+            skip_list_ref: self,
+            ptr: first,
+        }
+    }
+}
+
 // pub struct SkipListIterMut<'a, K: Key, V: Value> {
 //     skip_list_mut: &'a mut SkipList<K, V>,
 //     ptr: NodePtr<K, V>,
