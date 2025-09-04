@@ -119,6 +119,58 @@ impl<K: Key, V: Value> SkipList<K, V> {
         self.len
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn verify_spans(&self) -> bool {
+        // First, traverse level 0 to build a position index for each node
+        let mut node_positions = std::collections::HashMap::new();
+        let mut current = self.head;
+        let mut position = 0;
+        
+        // Map each node pointer to its position in level 0
+        while !self.is_tail(current) {
+            node_positions.insert(current, position);
+            current = unsafe { current.as_ref() }.forward[0].ptr;
+            position += 1;
+        }
+        node_positions.insert(self.tail, position); // tail position
+        
+        // Now verify spans at each level
+        for level in 0..=self.level {
+            let mut current = self.head;
+            
+            while !self.is_tail(current) {
+                let node_ref = unsafe { current.as_ref() };
+                
+                // Skip if this node doesn't have this level
+                if level >= node_ref.forward.len() {
+                    break;
+                }
+                
+                let forward_ptr = node_ref.forward[level];
+                let next_node = forward_ptr.ptr;
+                let span = forward_ptr.span;
+
+                // Get positions from our index
+                let current_pos = node_positions[&current];
+                let next_pos = node_positions[&next_node];
+                
+                // Span should equal the difference in positions
+                let expected_span = next_pos - current_pos;
+                if span != expected_span {
+                    return false;
+                }
+                
+                current = next_node;
+            }
+        }
+        
+        true
+    }
+
     fn is_head(&self, node: NodePtr<K, V>) -> bool {
         node == self.head
     }
@@ -500,5 +552,72 @@ impl<K: Key + fmt::Debug, V: Value + fmt::Debug> fmt::Display for SkipList<K, V>
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_basic_skiplist_operations() {
+        let mut skip_list = SkipList::new();
+        
+        assert_eq!(skip_list.len(), 0);
+        assert!(skip_list.is_empty());
+        
+        // Test insertion
+        assert_eq!(skip_list.insert(5, "five"), None);
+        assert_eq!(skip_list.len(), 1);
+        assert!(!skip_list.is_empty());
+        
+        // Test retrieval
+        assert_eq!(skip_list.get(&5), Some(&"five"));
+        assert_eq!(skip_list.get(&3), None);
+        
+        // Test replacement
+        assert_eq!(skip_list.insert(5, "FIVE"), Some("five"));
+        assert_eq!(skip_list.len(), 1);
+        assert_eq!(skip_list.get(&5), Some(&"FIVE"));
+        
+        // Test removal
+        assert_eq!(skip_list.remove(&5), Some("FIVE"));
+        assert_eq!(skip_list.len(), 0);
+        assert!(skip_list.is_empty());
+        assert_eq!(skip_list.get(&5), None);
+    }
+    
+    #[test]
+    fn test_ordering_property() {
+        let mut skip_list = SkipList::new();
+        let keys = [3, 1, 4, 1, 5, 9, 2, 6, 5];
+        
+        for &key in &keys {
+            skip_list.insert(key, key * 10);
+        }
+        
+        // Collect keys from iterator - should be in sorted order
+        let result_keys: Vec<_> = (&skip_list).into_iter().map(|(&k, _)| k).collect();
+        assert_eq!(result_keys, vec![1, 2, 3, 4, 5, 6, 9]);
+    }
+    
+    #[test]
+    fn test_span_verification() {
+        let mut skip_list = SkipList::new();
+        
+        // Test empty list
+        assert!(skip_list.verify_spans());
+        
+        // Test with elements
+        for i in [10, 5, 15, 3, 7, 12, 18] {
+            skip_list.insert(i, i);
+            assert!(skip_list.verify_spans(), "Span verification failed after inserting {}", i);
+        }
+        
+        // Test after removals
+        for i in [5, 15, 3] {
+            skip_list.remove(&i);
+            assert!(skip_list.verify_spans(), "Span verification failed after removing {}", i);
+        }
     }
 }
