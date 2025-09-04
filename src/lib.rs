@@ -416,6 +416,124 @@ impl<K: Key, V: Value> SkipList<K, V> {
         None
     }
 
+    /// Get the key-value pair at the specified index using span information for efficient traversal.
+    /// Returns None if the index is out of bounds.
+    /// 
+    /// Time complexity: O(log n) expected
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use skiplist::SkipList;
+    /// 
+    /// let mut skip_list = SkipList::new();
+    /// skip_list.insert(1, "first");
+    /// skip_list.insert(2, "second");
+    /// skip_list.insert(3, "third");
+    /// 
+    /// assert_eq!(skip_list.index(0), Some((&1, &"first")));
+    /// assert_eq!(skip_list.index(1), Some((&2, &"second")));
+    /// assert_eq!(skip_list.index(2), Some((&3, &"third")));
+    /// assert_eq!(skip_list.index(3), None);
+    /// ```
+    pub fn index(&self, index: usize) -> Option<(&K, &V)> {
+        if index >= self.len {
+            return None;
+        }
+
+        let target_index = index + 1; // +1 because head is at position 0
+        let mut current = self.head;
+        let mut current_index = 0;
+
+        // Traverse from highest level to lowest, using spans to skip efficiently
+        for level in (0..=self.level).rev() {
+            while current_index < target_index {
+                let current_node = unsafe { current.as_ref() };
+                
+                // Check if this level has a forward pointer
+                if level < current_node.forward.len() {
+                    let forward_ptr = current_node.forward[level];
+                    let next_index = current_index + forward_ptr.span;
+                    
+                    // If the next span would overshoot our target, move to lower level
+                    if next_index > target_index {
+                        break;
+                    }
+                    
+                    // If we reach the tail, we've gone too far
+                    if self.is_tail(forward_ptr.ptr) {
+                        break;
+                    }
+                    
+                    current = forward_ptr.ptr;
+                    current_index = next_index;
+                } else {
+                    break;
+                }
+            }
+        }
+
+        // If we found the exact index and it's not the head or tail
+        if current_index == target_index && !self.is_head(current) && !self.is_tail(current) {
+            let node = unsafe { current.as_ref() };
+            Some((node.key(), node.value()))
+        } else {
+            None
+        }
+    }
+
+    /// Get a mutable reference to the value at the specified index.
+    /// Returns None if the index is out of bounds.
+    /// 
+    /// Time complexity: O(log n) expected
+    pub fn index_mut(&mut self, index: usize) -> Option<(&K, &mut V)> {
+        if index >= self.len {
+            return None;
+        }
+
+        let target_index = index + 1; // +1 because head is at position 0
+        let mut current = self.head;
+        let mut current_index = 0;
+
+        // Traverse from highest level to lowest, using spans to skip efficiently
+        for level in (0..=self.level).rev() {
+            while current_index < target_index {
+                let current_node = unsafe { current.as_ref() };
+                
+                // Check if this level has a forward pointer
+                if level < current_node.forward.len() {
+                    let forward_ptr = current_node.forward[level];
+                    let next_index = current_index + forward_ptr.span;
+                    
+                    // If the next span would overshoot our target, move to lower level
+                    if next_index > target_index {
+                        break;
+                    }
+                    
+                    // If we reach the tail, we've gone too far
+                    if self.is_tail(forward_ptr.ptr) {
+                        break;
+                    }
+                    
+                    current = forward_ptr.ptr;
+                    current_index = next_index;
+                } else {
+                    break;
+                }
+            }
+        }
+
+        // If we found the exact index and it's not the head or tail
+        if current_index == target_index && !self.is_head(current) && !self.is_tail(current) {
+            let node = unsafe { current.as_mut() };
+            let key_ref = unsafe { current.as_ref() }.key(); // Get immutable reference to key
+            let value_ref = node.value_mut(); // Get mutable reference to value
+            Some((key_ref, value_ref))
+        } else {
+            None
+        }
+    }
+
     fn rand_level() -> usize {
         let mut level = 0;
 
@@ -618,6 +736,134 @@ mod tests {
         for i in [5, 15, 3] {
             skip_list.remove(&i);
             assert!(skip_list.verify_spans(), "Span verification failed after removing {}", i);
+        }
+    }
+
+    #[test]
+    fn test_index_basic() {
+        let mut skip_list = SkipList::new();
+        
+        // Test empty list
+        assert_eq!(skip_list.index(0), None);
+        
+        // Test single element
+        skip_list.insert(5, "five");
+        assert_eq!(skip_list.index(0), Some((&5, &"five")));
+        assert_eq!(skip_list.index(1), None);
+        
+        // Test multiple elements
+        skip_list.insert(3, "three");
+        skip_list.insert(7, "seven");
+        skip_list.insert(1, "one");
+        
+        // Elements should be in sorted order by key
+        assert_eq!(skip_list.index(0), Some((&1, &"one")));
+        assert_eq!(skip_list.index(1), Some((&3, &"three")));
+        assert_eq!(skip_list.index(2), Some((&5, &"five")));
+        assert_eq!(skip_list.index(3), Some((&7, &"seven")));
+        assert_eq!(skip_list.index(4), None);
+    }
+
+    #[test]
+    fn test_index_mut() {
+        let mut skip_list = SkipList::new();
+        
+        skip_list.insert(1, 10);
+        skip_list.insert(2, 20);
+        skip_list.insert(3, 30);
+        
+        // Test mutable access
+        if let Some((key, value)) = skip_list.index_mut(1) {
+            assert_eq!(*key, 2);
+            *value = 200;
+        }
+        
+        // Verify the change
+        assert_eq!(skip_list.index(1), Some((&2, &200)));
+        assert_eq!(skip_list.get(&2), Some(&200));
+    }
+
+    #[test]
+    fn test_index_large_dataset() {
+        let mut skip_list = SkipList::new();
+        
+        // Insert many elements
+        let elements: Vec<i32> = (0..1000).collect();
+        for &elem in &elements {
+            skip_list.insert(elem, elem * 10);
+        }
+        
+        // Test random indices
+        for &i in &[0, 50, 100, 500, 999] {
+            let result = skip_list.index(i);
+            assert_eq!(result, Some((&elements[i], &(elements[i] * 10))));
+        }
+        
+        // Test out of bounds
+        assert_eq!(skip_list.index(1000), None);
+        assert_eq!(skip_list.index(1500), None);
+    }
+
+    #[test]
+    fn test_index_with_removals() {
+        let mut skip_list = SkipList::new();
+        
+        // Insert elements 0..10
+        for i in 0..10 {
+            skip_list.insert(i, i * 10);
+        }
+        
+        // Remove some elements [2, 4, 6, 8]
+        for i in [2, 4, 6, 8] {
+            skip_list.remove(&i);
+        }
+        
+        // Remaining elements should be [0, 1, 3, 5, 7, 9]
+        let expected = [0, 1, 3, 5, 7, 9];
+        
+        for (idx, &expected_key) in expected.iter().enumerate() {
+            assert_eq!(skip_list.index(idx), Some((&expected_key, &(expected_key * 10))));
+        }
+        
+        // Test out of bounds after removals
+        assert_eq!(skip_list.index(6), None);
+    }
+
+    #[test]
+    fn test_index_random_insertions() {
+        let mut skip_list = SkipList::new();
+        
+        // Insert in random order
+        let mut keys = vec![15, 3, 8, 1, 12, 20, 5, 18, 9, 7];
+        for &key in &keys {
+            skip_list.insert(key, key);
+        }
+        
+        // Sort keys to get expected order
+        keys.sort();
+        
+        // Test that index returns elements in sorted order
+        for (idx, &expected_key) in keys.iter().enumerate() {
+            assert_eq!(skip_list.index(idx), Some((&expected_key, &expected_key)));
+        }
+    }
+
+    #[test]
+    fn test_index_consistency_with_iteration() {
+        let mut skip_list = SkipList::new();
+        
+        // Insert random elements
+        let elements = [42, 17, 8, 23, 4, 15, 31, 6, 19, 12];
+        for &elem in &elements {
+            skip_list.insert(elem, elem * 2);
+        }
+        
+        // Collect via iteration
+        let iterated: Vec<_> = (&skip_list).into_iter().map(|(&k, &v)| (k, v)).collect();
+        
+        // Check that index method gives same results as iteration
+        for (idx, &(expected_key, expected_value)) in iterated.iter().enumerate() {
+            assert_eq!(skip_list.index(idx), Some((&expected_key, &expected_value)));
         }
     }
 }

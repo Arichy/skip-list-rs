@@ -260,6 +260,8 @@ proptest! {
         let empty_list: SkipList<i32, i32> = SkipList::new();
         prop_assert_eq!(empty_list.len(), 0);
         prop_assert_eq!(empty_list.get(&key), None);
+        prop_assert_eq!(empty_list.index(0), None);
+        prop_assert_eq!(empty_list.index(100), None);
         
         let items: Vec<_> = (&empty_list).into_iter().collect();
         prop_assert_eq!(items, vec![]);
@@ -272,12 +274,70 @@ proptest! {
         prop_assert_eq!(single_list.insert(key, value), None);
         prop_assert_eq!(single_list.len(), 1);
         prop_assert_eq!(single_list.get(&key), Some(&value));
+        prop_assert_eq!(single_list.index(0), Some((&key, &value)));
+        prop_assert_eq!(single_list.index(1), None);
         
         let items: Vec<_> = (&single_list).into_iter().map(|(&k, &v)| (k, v)).collect();
         prop_assert_eq!(items, vec![(key, value)]);
         
         prop_assert_eq!(single_list.remove(&key), Some(value));
         prop_assert_eq!(single_list.len(), 0);
+        prop_assert_eq!(single_list.index(0), None);
+    }
+
+    #[test]
+    fn test_index_consistency(
+        operations in prop::collection::vec((0i32..50, 0i32..100), 1..50)
+    ) {
+        let mut skip_list = SkipList::new();
+        
+        // Insert all elements
+        for (key, value) in operations {
+            skip_list.insert(key, value);
+        }
+        
+        // Collect elements via iteration (guaranteed sorted order)
+        let iterated: Vec<_> = (&skip_list).into_iter().map(|(&k, &v)| (k, v)).collect();
+        
+        // Test that index method returns same results as iteration
+        for (idx, &(expected_key, expected_value)) in iterated.iter().enumerate() {
+            prop_assert_eq!(skip_list.index(idx), Some((&expected_key, &expected_value)));
+        }
+        
+        // Test out of bounds
+        prop_assert_eq!(skip_list.index(iterated.len()), None);
+        if iterated.len() < 1000 {
+            prop_assert_eq!(skip_list.index(iterated.len() + 100), None);
+        }
+    }
+
+    #[test]
+    fn test_index_after_removals(
+        inserts in prop::collection::vec(0i32..30, 5..20),
+        removes in prop::collection::vec(0i32..30, 1..10)
+    ) {
+        let mut skip_list = SkipList::new();
+        
+        // Insert elements
+        for key in inserts {
+            skip_list.insert(key, key * 10);
+        }
+        
+        // Remove some elements
+        for key in removes {
+            skip_list.remove(&key);
+        }
+        
+        // Check index consistency after removals
+        let iterated: Vec<_> = (&skip_list).into_iter().map(|(&k, &v)| (k, v)).collect();
+        
+        for (idx, &(expected_key, expected_value)) in iterated.iter().enumerate() {
+            prop_assert_eq!(skip_list.index(idx), Some((&expected_key, &expected_value)));
+        }
+        
+        // Verify span consistency if test-utils feature is enabled
+        #[cfg(feature = "test-utils")]
+        prop_assert!(skip_list.verify_spans(), "Span verification failed after operations");
     }
 }
 
