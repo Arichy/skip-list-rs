@@ -7,7 +7,6 @@ A Skip List data structure implementation in Rust demonstrating probabilistic da
 ## Key Features
 
 - **O(log n) Time Complexity**: Lookup, insertion, and removal operations
-
 - **Span-based Indexing**: Each forward pointer maintains span information for O(log n) positional access
 - **Random Access Optimization**: Efficient `index()` method using span traversal from highest to lowest level
 
