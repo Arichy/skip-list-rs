@@ -32,6 +32,7 @@ for (key, value) in &skip_list {
 ```
 
 ## Performance Comparison
+Tested on MacBook Pro with M4 Pro.
 
 Lookup performance comparison (10,000 elements):
 
@@ -40,6 +41,8 @@ Lookup performance comparison (10,000 elements):
 | BTreeMap       | ~310µs                    | 1.0x (baseline)      |
 | SkipList       | ~921µs                    | 2.9x slower          |
 | LinkedList     | ~126ms                    | **406x slower**      |
+
+![comparison](comparison.png)
 
 **Key Insights:**
 

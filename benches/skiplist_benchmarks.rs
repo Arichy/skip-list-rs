@@ -38,7 +38,7 @@ fn insert_benchmark(c: &mut Criterion) {
             });
         });
         
-        // Benchmark LinkedList insertion for comparison (note: much slower due to O(n) operations)
+        // Benchmark LinkedList insertion for comparison (note: much slower due to O(n) sorted insertions)
         group.bench_with_input(BenchmarkId::new("linkedlist", size), size, |b, &size| {
             let mut rng = StdRng::seed_from_u64(42);
             let keys: Vec<i32> = (0..size).map(|_| rng.random_range(0..size * 10)).collect();
@@ -46,8 +46,19 @@ fn insert_benchmark(c: &mut Criterion) {
             b.iter(|| {
                 let mut list: LinkedList<(i32, i32)> = LinkedList::new();
                 for &key in &keys {
-                    // For fairness, just append to end (O(1)) instead of sorted insertion (O(n))
-                    list.push_back((black_box(key), black_box(key * 2)));
+                    // Maintain sorted order in LinkedList by finding insertion position
+                    let value = black_box(key * 2);
+                    let key = black_box(key);
+                    
+                    // Convert to Vec, insert in sorted position, convert back
+                    let mut vec: Vec<(i32, i32)> = list.into_iter().collect();
+                    
+                    // Find insertion position to maintain sorted order
+                    let pos = vec.binary_search_by_key(&key, |(k, _)| *k)
+                        .unwrap_or_else(|pos| pos);
+                    
+                    vec.insert(pos, (key, value));
+                    list = vec.into_iter().collect();
                 }
                 list
             });
@@ -158,6 +169,36 @@ fn remove_benchmark(c: &mut Criterion) {
                         btree.remove(&black_box(key));
                     }
                     btree
+                },
+                criterion::BatchSize::SmallInput,
+            );
+        });
+        
+        // Benchmark LinkedList removal for comparison (note: O(n) find + remove operation)
+        group.bench_with_input(BenchmarkId::new("linkedlist", size), size, |b, &size| {
+            let mut rng = StdRng::seed_from_u64(42);
+            let keys: Vec<i32> = (0..size).map(|_| rng.random_range(0..size * 10)).collect();
+            
+            b.iter_batched(
+                || {
+                    let mut list: LinkedList<(i32, i32)> = LinkedList::new();
+                    for &key in &keys {
+                        list.push_back((key, key * 2));
+                    }
+                    (list, keys.clone())
+                },
+                |(mut list, keys)| {
+                    for &key in &keys {
+                        // LinkedList doesn't have efficient remove by key
+                        // We'll use a simple but inefficient approach: collect and rebuild
+                        let key_to_remove = black_box(key);
+                        let remaining: LinkedList<(i32, i32)> = list
+                            .into_iter()
+                            .filter(|(k, _)| *k != key_to_remove)
+                            .collect();
+                        list = remaining;
+                    }
+                    list
                 },
                 criterion::BatchSize::SmallInput,
             );
@@ -363,11 +404,12 @@ fn sequential_vs_random_benchmark(c: &mut Criterion) {
         });
     });
     
-    // LinkedList comparison (note: much slower due to O(n) insertions)
+    // LinkedList comparison (note: much slower due to maintaining sorted order)
     group.bench_function("linkedlist_sequential_insert", |b| {
         b.iter(|| {
             let mut list: LinkedList<(i32, i32)> = LinkedList::new();
             for i in 0..size {
+                // For sequential insertion, LinkedList can use push_back since data is already sorted
                 list.push_back((black_box(i), black_box(i * 2)));
             }
             list
@@ -382,8 +424,19 @@ fn sequential_vs_random_benchmark(c: &mut Criterion) {
         b.iter(|| {
             let mut list: LinkedList<(i32, i32)> = LinkedList::new();
             for &key in &keys {
-                // Just append for LinkedList (not maintaining sorted order for performance)
-                list.push_back((black_box(key), black_box(key * 2)));
+                // Maintain sorted order in LinkedList by finding insertion position
+                let value = black_box(key * 2);
+                let key = black_box(key);
+                
+                // Convert to Vec, insert in sorted position, convert back
+                let mut vec: Vec<(i32, i32)> = list.into_iter().collect();
+                
+                // Find insertion position to maintain sorted order
+                let pos = vec.binary_search_by_key(&key, |(k, _)| *k)
+                    .unwrap_or_else(|pos| pos);
+                
+                vec.insert(pos, (key, value));
+                list = vec.into_iter().collect();
             }
             list
         });

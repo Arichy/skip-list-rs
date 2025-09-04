@@ -31,7 +31,8 @@ fn main() {
     let start = Instant::now();
     let mut linkedlist = LinkedList::new();
     for i in 0..size {
-        linkedlist.push_back((i, i * 2)); // Sequential insertion is O(1) for LinkedList
+        // For sequential insertion, LinkedList can append efficiently since data is already sorted
+        linkedlist.push_back((i, i * 2));
     }
     let linkedlist_insert_time = start.elapsed();
     println!("   LinkedList: {:?}", linkedlist_insert_time);
@@ -87,8 +88,48 @@ fn main() {
     let linkedlist_iter_time = start.elapsed();
     println!("   LinkedList: {:?} (sum: {})", linkedlist_iter_time, sum);
     
+    // Test removal performance  
+    println!("\n4. Removal Performance:");
+    
+    // Create fresh copies for removal testing
+    let mut skiplist_copy = SkipList::new();
+    let mut btreemap_copy = BTreeMap::new();
+    let mut linkedlist_copy = LinkedList::new();
+    
+    for i in 0..size {
+        skiplist_copy.insert(i, i * 2);
+        btreemap_copy.insert(i, i * 2);
+        linkedlist_copy.push_back((i, i * 2));
+    }
+    
+    let start = Instant::now();
+    for i in 0..size {
+        skiplist_copy.remove(&i);
+    }
+    let skiplist_remove_time = start.elapsed();
+    println!("   SkipList: {:?}", skiplist_remove_time);
+    
+    let start = Instant::now();
+    for i in 0..size {
+        btreemap_copy.remove(&i);
+    }
+    let btreemap_remove_time = start.elapsed();
+    println!("   BTreeMap: {:?}", btreemap_remove_time);
+    
+    let start = Instant::now();
+    for i in 0..size {
+        // LinkedList remove by key (very inefficient - O(n) per operation)
+        let remaining: LinkedList<(i32, i32)> = linkedlist_copy
+            .into_iter()
+            .filter(|(k, _)| *k != i)
+            .collect();
+        linkedlist_copy = remaining;
+    }
+    let linkedlist_remove_time = start.elapsed();
+    println!("   LinkedList: {:?}", linkedlist_remove_time);
+    
     // Summary
-    println!("\n4. Summary (relative to BTreeMap):");
+    println!("\n5. Summary (relative to BTreeMap):");
     println!("   Insert - SkipList: {:.2}x, LinkedList: {:.2}x", 
              skiplist_insert_time.as_nanos() as f64 / btreemap_insert_time.as_nanos() as f64,
              linkedlist_insert_time.as_nanos() as f64 / btreemap_insert_time.as_nanos() as f64);
@@ -98,8 +139,13 @@ fn main() {
     println!("   Iter   - SkipList: {:.2}x, LinkedList: {:.2}x", 
              skiplist_iter_time.as_nanos() as f64 / btreemap_iter_time.as_nanos() as f64,
              linkedlist_iter_time.as_nanos() as f64 / btreemap_iter_time.as_nanos() as f64);
+    println!("   Remove - SkipList: {:.2}x, LinkedList: {:.2}x", 
+             skiplist_remove_time.as_nanos() as f64 / btreemap_remove_time.as_nanos() as f64,
+             linkedlist_remove_time.as_nanos() as f64 / btreemap_remove_time.as_nanos() as f64);
     
     println!("\nNote: Values > 1.0 mean slower than BTreeMap, < 1.0 mean faster than BTreeMap");
-    println!("LinkedList get operations are O(n) and much slower for large datasets");
-    println!("For detailed benchmarks with statistical analysis, run: cargo bench");
+    println!("LinkedList insertion is O(1) for sequential data but O(n) for maintaining sorted order with random data");
+    println!("LinkedList get and remove operations are O(n) and much slower for large datasets");
+    println!("LinkedList removal uses filter+collect which is very inefficient compared to dedicated remove operations");
+    println!("For detailed benchmarks including random insertion patterns, run: cargo bench");
 }
